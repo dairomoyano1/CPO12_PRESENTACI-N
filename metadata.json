@@ -1,0 +1,6 @@
+{
+  "name": "CPO-12 Diagnóstico Ambiental",
+  "description": "Diagnóstico de cumplimiento ambiental y estrategia integrada de inversiones para Bloque CPO-12 (LAM5475 & Cormacarena)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
