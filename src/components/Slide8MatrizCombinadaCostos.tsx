@@ -70,7 +70,7 @@ const PRESETS: PresetOption[] = [
   {
     id: 'max-prob',
     name: 'Máximo Blindaje Predial PNN',
-    badge: 'Máxima Certeza (85% / 85%): $1.025,6M',
+    badge: 'Máxima Certeza (85% / 85%): $1.177,6M',
     badgeBg: 'bg-purple-100 text-purple-800 border-purple-300',
     description: 'Comp. Esc 2 (PNN 61,3 ha) + 1% Esc 3 (Saneamiento ~38,3 ha). Cero riesgo de mortandad de siembras y blindaje definitivo.',
     compScenarioId: 2,
@@ -80,7 +80,7 @@ const PRESETS: PresetOption[] = [
   {
     id: 'balanced-rec',
     name: 'Estrategia Recomendada Corporativa',
-    badge: 'Recomendada: $1.043,4M',
+    badge: 'Recomendada: $1.195,4M',
     badgeBg: 'bg-blue-100 text-blue-800 border-blue-300',
     description: 'Comp. Esc 3 (Mixto PNN 22 ha) + 1% Esc 1 (Aceptación 4 ha + Saldo $154M). Excelente balance costo, tiempo y probabilidad.',
     compScenarioId: 3,
@@ -90,7 +90,7 @@ const PRESETS: PresetOption[] = [
   {
     id: 'pure-predial',
     name: '100% Adquisición / Saneamiento Predial',
-    badge: 'Sin Mantenimiento: $1.025,6M',
+    badge: 'Sin Mantenimiento: $1.177,6M',
     badgeBg: 'bg-amber-100 text-amber-800 border-amber-300',
     description: 'Comp. Esc 2 (PNN 61,3 ha) + 1% Esc 3 (Adquisición $257,5M). Entrega predial a Parques sin riesgo de mortandad de siembras.',
     compScenarioId: 2,

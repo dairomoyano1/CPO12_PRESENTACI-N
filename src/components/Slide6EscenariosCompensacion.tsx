@@ -115,7 +115,7 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
         tiempo: '2 años',
         costoCOP: 152000000.0,
         costoFormatted: '$ 152.000.000,00',
-        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 2 años)',
+        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 2 años; 1,5 años de ejecución redondeando a 2 años)',
       },
     ],
   },
@@ -125,12 +125,12 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
     shortTitle: 'Escenario 2: Acogimiento Nuevo Manual (PNN 61,3 ha)',
     name: 'Implementación de la compensación a través del acogimiento del nuevo manual con Acción de Preservación Estricta Saneamiento Predial en PNN (Parques Nacionales Naturales), aplicando los nuevos factores = 61,3 ha',
     description: 'Saneamiento y adquisición predial total en PNN bajo nuevo manual de compensaciones del MADS (61,3 ha requeridas por factor).',
-    timeYears: 3.5,
-    timeLabel: '3,5 Años (42 Meses)',
+    timeYears: 4.5,
+    timeLabel: '4,5 Años (54 Meses)',
     areaHa: 61.3,
     areaLabel: '61,3 ha (PNN)',
-    totalCostCOP: 731326765.32,
-    totalCostFormatted: '$ 731.326.765,32',
+    totalCostCOP: 883326765.32,
+    totalCostFormatted: '$ 883.326.765,32',
     imprevistosCOP: 41211524.12,
     probability: 'Alta',
     probabilityPercent: 85,
@@ -184,10 +184,10 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
       },
       {
         actividad: 'Seguimiento ANLA + Póliza (aproximado) $76 M/año',
-        tiempo: '3 años',
-        costoCOP: 228000000.0,
-        costoFormatted: '$ 228.000.000,00',
-        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 3 años)',
+        tiempo: '5 años',
+        costoCOP: 380000000.0,
+        costoFormatted: '$ 380.000.000,00',
+        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 5 años; 4,5 años de ejecución redondeando a 5 años)',
       },
     ],
   },
@@ -197,12 +197,12 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
     shortTitle: 'Escenario 3: Mixto (22 ha PNN + Postmantenimiento 18,6 ha)',
     name: 'Implementación de la compensación a través del acogimiento del nuevo manual con Acción de Preservación Estricta Saneamiento Predial en PNN (Parques Nacionales Naturales), aplicando los nuevos factores = 22 ha para el lote 3 y 4 (10 ha) si no es viable en el inventario, adicional un postmantenimiento de las 18,6 ha (lote 1 y 2) restantes por un año',
     description: 'Estrategia combinada: Adquisición de 22 ha en PNN para sustituir Lotes 3 y 4 + 1 año de postmantenimiento en Lotes 1 y 2.',
-    timeYears: 3.5,
-    timeLabel: '3,5 Años (42 Meses)',
+    timeYears: 4.5,
+    timeLabel: '4,5 Años (54 Meses)',
     areaHa: 22.0,
     areaLabel: '22 ha (PNN) + 18,6 ha (La Holanda)',
-    totalCostCOP: 800759759.25,
-    totalCostFormatted: '$ 800.759.759,25',
+    totalCostCOP: 952759759.25,
+    totalCostFormatted: '$ 952.759.759,25',
     imprevistosCOP: 86803432.49,
     probability: 'Media',
     probabilityPercent: 50,
@@ -263,10 +263,10 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
       },
       {
         actividad: 'Seguimiento ANLA + Póliza (aproximado) $76 M/año',
-        tiempo: '3 años',
-        costoCOP: 228000000.0,
-        costoFormatted: '$ 228.000.000,00',
-        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 3 años)',
+        tiempo: '5 años',
+        costoCOP: 380000000.0,
+        costoFormatted: '$ 380.000.000,00',
+        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 5 años; 4,5 años de ejecución redondeando a 5 años)',
       },
     ],
   },
@@ -324,7 +324,7 @@ export const COMPENSATION_SCENARIOS: ScenarioDetail[] = [
         tiempo: '2 años',
         costoCOP: 152000000.0,
         costoFormatted: '$ 152.000.000,00',
-        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 2 años)',
+        observacion: 'Seguimiento ANLA + Póliza ($76M/año x 2 años; 1,5 años de ejecución redondeando a 2 años)',
       },
     ],
   },
@@ -671,7 +671,7 @@ export const Slide6EscenariosCompensacion: React.FC<Slide6Props> = ({ onNavigate
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-[11px] text-slate-600">
-                <span>Rápida Ejecución: <strong>Escenarios 1 y 4 (1,5 Años - Sin Formulación)</strong> | Media: <strong>Escenarios 2 y 3 (3,5 Años - Con Formulación + 6 Meses Gestión Interna)</strong></span>
+                <span>Rápida Ejecución: <strong>Escenarios 1 y 4 (1,5 Años - Sin Formulación)</strong> | Media: <strong>Escenarios 2 y 3 (4,5 Años - Con Formulación + 6 Meses Gestión Interna)</strong></span>
                 <span className="text-blue-700 font-bold">Mayor Área: Esc. 2 (61,3 ha)</span>
               </div>
             </div>
@@ -762,7 +762,7 @@ export const Slide6EscenariosCompensacion: React.FC<Slide6Props> = ({ onNavigate
           <div className="flex items-center gap-2 text-slate-800">
             <Info className="w-4 h-4 text-[#001871] shrink-0" />
             <span>
-              <strong>Criterio de Decisión:</strong> El <strong>Escenario 1 ($398,1M, 1,5 años, Prob. Muy Baja 15%)</strong> ofrece menor costo pero sujeto a aprobación de ANLA sin formulación; el <strong>Escenario 2 ($731,3M, 3,5 años, Prob. Alta 85%)</strong> ofrece el mayor blindaje técnico y normativo ante ANLA por adquisición directa en PNN (sumando 6 meses de gestión interna por formulación previa); el <strong>Escenario 3 ($800,8M, 3,5 años, Prob. Media 50%)</strong> combina PNN (22 ha) con postmantenimiento en 18,6 ha (sumando 6 meses de gestión interna por formulación previa); y el <strong>Escenario 4 ($784,8M, 1,5 años, Prob. Baja 25%)</strong> proyecta postmantenimiento total de 30,4 ha directo sin formulación.
+              <strong>Criterio de Decisión:</strong> El <strong>Escenario 1 ($398,1M, 1,5 años, Prob. Muy Baja 15%)</strong> ofrece menor costo pero sujeto a aprobación de ANLA sin formulación; el <strong>Escenario 2 ($883,3M, 4,5 años, Prob. Alta 85%)</strong> ofrece el mayor blindaje técnico y normativo ante ANLA por adquisición directa en PNN (sumando 6 meses de gestión interna por formulación previa y póliza para 5 años); el <strong>Escenario 3 ($952,8M, 4,5 años, Prob. Media 50%)</strong> combina PNN (22 ha) con postmantenimiento en 18,6 ha (sumando 6 meses de gestión interna por formulación previa y póliza para 5 años); y el <strong>Escenario 4 ($784,8M, 1,5 años, Prob. Baja 25%)</strong> proyecta postmantenimiento total de 30,4 ha directo sin formulación.
             </span>
           </div>
         </div>
