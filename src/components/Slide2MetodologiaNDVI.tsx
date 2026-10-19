@@ -7,7 +7,7 @@ import {
   NDVIUnit 
 } from '../data/ndviData';
 import { NDVISatelliteViewer } from './NDVISatelliteViewer';
-import { loadAllLotImages } from '../utils/lotImageStorage';
+import { loadAllLotImages, getLotImage, normalizeLotId } from '../utils/lotImageStorage';
 import { 
   Satellite, 
   Layers, 
@@ -103,12 +103,12 @@ export const Slide2MetodologiaNDVI: React.FC<Slide2Props> = ({
     <div className="w-full flex flex-col gap-4">
       {/* Slide Header */}
       <SlideHeader
-        slideNumber={5}
+        slideNumber={6}
         totalSlides={10}
-        title="Resultados y Monitoreo Satelital NDVI (Google Earth Engine)"
-        subtitle="Evaluación de Vigor Fotosintético, Dinámica Sucesional y Soporte Biofísico para Decisiones C-Suite"
-        objective="Evidenciar con datos satelitales multitemporales a 10m/px las 33,34 Ha consolidadas para cierre ante ANLA y las 6,00 Ha siniestradas que justifican la sustitución por Cosecha de Agua."
-        badge="Resultados Satelitales & C-Suite"
+        title="Metodología y Análisis Satelital NDVI (Google Earth Engine)"
+        subtitle="Monitoreo Multitemporal de Vigor Fotosintético y Dinámica Sucesional (Resolución 10m/px)"
+        objective="Demostrar mediante sensores remotos y Google Earth Engine la evolución cuantitativa de biomasa y cobertura vegetal en Compensación Biótica (30,44 Ha) e Inversión 1% (10,0 Ha)."
+        badge="Monitoreo Multitemporal GEE"
       />
 
       {/* ========================================================================= */}
@@ -249,13 +249,11 @@ export const Slide2MetodologiaNDVI: React.FC<Slide2Props> = ({
             })}
           </div>
 
-          {/* Render Satellite Interactive Viewer (Original imagery & raster simulation intact) */}
+          {/* Render Satellite Interactive Viewer with user attached image in multitemporal maps */}
           <NDVISatelliteViewer
             unit={currentUnit}
             selectedYear={selectedYear}
             onSelectYear={(yr) => setSelectedYear(yr)}
-            showAllYearsGrid={showAllYearsGrid}
-            onToggleGrid={() => setShowAllYearsGrid(!showAllYearsGrid)}
           />
 
           {/* Executive Results Breakdown for the Selected Category */}
@@ -433,20 +431,23 @@ export const Slide2MetodologiaNDVI: React.FC<Slide2Props> = ({
 
                   {/* Satellite Raster / Real Uploaded Image Preview Box */}
                   <div className="relative w-full aspect-[4/3] bg-[#0c1527] rounded-lg overflow-hidden border border-slate-700/80 p-2 flex flex-col justify-between">
-                    {uploadedImages[unit.id] ? (
-                      <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
-                        <img
-                          src={uploadedImages[unit.id]}
-                          alt={unit.unitName}
-                          className="w-full h-full object-contain"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const unitImg = getLotImage(unit.id) || uploadedImages[unit.id] || uploadedImages[normalizeLotId(unit.id)];
+                      return unitImg ? (
+                        <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
+                          <img
+                            src={unitImg}
+                            alt={unit.unitName}
+                            className="w-full h-full object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      ) : null;
+                    })()}
 
                     <div className="flex items-center justify-between text-[10px] font-mono z-10">
                       <span className="bg-[#001871]/80 px-2 py-0.5 rounded text-yellow-300 font-bold border border-white/10">
-                        {uploadedImages[unit.id] ? '📸 Mapa Real' : '2026 • 10m/px'}
+                        {getLotImage(unit.id) || uploadedImages[unit.id] || uploadedImages[normalizeLotId(unit.id)] ? '📸 Mapa Real' : '2026 • 10m/px'}
                       </span>
                       <span className="bg-black/60 px-2 py-0.5 rounded text-cyan-300 font-bold border border-white/10">
                         NDVI: {latestPoint.meanNDVI.toFixed(2)}
@@ -454,7 +455,7 @@ export const Slide2MetodologiaNDVI: React.FC<Slide2Props> = ({
                     </div>
 
                     {/* SVG Map Shape (if no uploaded image) */}
-                    {!uploadedImages[unit.id] && (
+                    {!(getLotImage(unit.id) || uploadedImages[unit.id] || uploadedImages[normalizeLotId(unit.id)]) && (
                       <div className="flex-1 flex items-center justify-center p-1">
                         <svg viewBox="0 0 160 120" className="w-full h-full max-h-[140px]" preserveAspectRatio="xMidYMid meet">
                           <rect x="5" y="5" width="150" height="110" fill="none" stroke="#334155" strokeWidth="0.5" strokeDasharray="2,2" rx="4" />

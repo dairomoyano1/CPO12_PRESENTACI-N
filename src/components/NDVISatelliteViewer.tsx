@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Globe2,
   CheckCircle2,
+  Satellite,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,7 +43,19 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
   showAllYearsGrid = false,
   onToggleGrid,
 }) => {
-  const [viewMode, setViewMode] = useState<'orthophoto' | 'uploaded'>('orthophoto');
+  // 'ndvi' (multitemporal satellite maps) is the default and primary view
+  const [viewMode, setViewMode] = useState<'ndvi' | 'orthophoto' | 'uploaded'>('ndvi');
+
+  // Display mode inside the multitemporal series: 'raster' | 'uploaded' | 'split'
+  // Defaults to 'uploaded' so the user's attached image is immediately visible in multitemporal maps!
+  const [seriesDisplayMode, setSeriesDisplayMode] = useState<'raster' | 'uploaded' | 'split'>('uploaded');
+
+  // Target year for photo upload (undefined = lot general image)
+  const [targetUploadYear, setTargetUploadYear] = useState<number | undefined>(selectedYear);
+
+  // Fullscreen lightbox modal for viewing attached image
+  const [zoomModalImg, setZoomModalImg] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
+
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number; ndvi: number; stratum: string } | null>(null);
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
@@ -55,15 +68,11 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
     const refreshImages = async () => {
       const all = await loadAllLotImages();
       setUploadedImages(all);
-      const img = getLotImage(unit.id);
-      if (img) {
-        setViewMode('uploaded');
-      }
     };
     refreshImages();
 
     // Listen to storage update events across components
-    const handleUpdate = (e: any) => {
+    const handleUpdate = () => {
       loadAllLotImages().then((all) => {
         setUploadedImages(all);
       });
@@ -73,7 +82,34 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
     return () => window.removeEventListener('cpo12_lot_images_updated', handleUpdate);
   }, [unit.id]);
 
-  const currentUploadedImg = getLotImage(unit.id) || uploadedImages[unit.id] || null;
+  // Image for the lot general
+  const generalUploadedImg = getLotImage(unit.id) || uploadedImages[unit.id] || uploadedImages[normalizeLotId(unit.id)] || null;
+
+  // Image for the selected year (with fallback to lot general)
+  const currentYearImg = getLotImage(unit.id, selectedYear) ||
+    uploadedImages[`${normalizeLotId(unit.id)}_${selectedYear}`] ||
+    uploadedImages[`${unit.id}_${selectedYear}`] ||
+    generalUploadedImg;
+
+  // Check if current year has an explicit year-specific photo
+  const isYearSpecificPhoto = !!(
+    getLotImage(unit.id, selectedYear) &&
+    (uploadedImages[`${normalizeLotId(unit.id)}_${selectedYear}`] || uploadedImages[`${unit.id}_${selectedYear}`])
+  );
+
+  const currentUploadedImg = currentYearImg;
+
+  // Whenever unit or selectedYear changes, if an attached image exists, show the uploaded image by default in multitemporal maps
+  useEffect(() => {
+    if (currentYearImg) {
+      setSeriesDisplayMode('uploaded');
+    }
+  }, [unit.id, selectedYear, !!currentYearImg]);
+
+  const handleTriggerUpload = (year?: number) => {
+    setTargetUploadYear(year);
+    fileInputRef.current?.click();
+  };
 
   const handleImageUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -83,13 +119,28 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
 
     try {
       setIsSaving(true);
-      const savedDataUrl = await saveLotImage(unit.id, file);
+      const year = targetUploadYear;
+      const savedDataUrl = await saveLotImage(unit.id, file, year);
+      const normId = normalizeLotId(unit.id);
+      
+      const key1 = year ? `${normId}_${year}` : normId;
+      const key2 = year ? `${unit.id}_${year}` : unit.id;
+
       setUploadedImages((prev) => ({
         ...prev,
-        [unit.id]: savedDataUrl,
-        [normalizeLotId(unit.id)]: savedDataUrl,
+        [key1]: savedDataUrl,
+        [key2]: savedDataUrl,
+        [normId]: prev[normId] || savedDataUrl,
+        [unit.id]: prev[unit.id] || savedDataUrl,
       }));
-      setViewMode('uploaded');
+
+      // When in series mode, keep the user in the series and switch to uploaded mode
+      if (viewMode === 'ndvi') {
+        setSeriesDisplayMode('uploaded');
+      } else {
+        setViewMode('uploaded');
+      }
+
       setSavedSuccessMsg(true);
       setTimeout(() => setSavedSuccessMsg(false), 3500);
     } catch (err) {
@@ -100,13 +151,21 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
     }
   };
 
-  const handleRemoveUploadedImage = async () => {
-    await removeLotImage(unit.id);
+  const handleRemoveUploadedImage = async (year?: number) => {
+    await removeLotImage(unit.id, year);
     const updated = { ...uploadedImages };
-    delete updated[unit.id];
-    delete updated[normalizeLotId(unit.id)];
+    const normId = normalizeLotId(unit.id);
+    if (year) {
+      delete updated[`${normId}_${year}`];
+      delete updated[`${unit.id}_${year}`];
+    } else {
+      delete updated[unit.id];
+      delete updated[normId];
+    }
     setUploadedImages(updated);
-    setViewMode('orthophoto');
+    if (seriesDisplayMode === 'uploaded' && !getLotImage(unit.id, selectedYear) && !generalUploadedImg) {
+      setSeriesDisplayMode('raster');
+    }
   };
 
   const currentPoint = unit.series.find((s) => s.year === selectedYear) || unit.series[0];
@@ -203,7 +262,176 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
     return <LiveSatelliteMap unit={unit} />;
   };
 
-  // Render Custom Uploaded Image View
+  // Render Custom Uploaded Image for a specific year in the multitemporal series (or fallback to lot image)
+  const renderYearUploadedView = (point: NDVISeriePoint, isInteractive: boolean = true) => {
+    const pointNormId = normalizeLotId(unit.id);
+    const pointImg = getLotImage(unit.id, point.year) ||
+      uploadedImages[`${pointNormId}_${point.year}`] ||
+      uploadedImages[`${unit.id}_${point.year}`] ||
+      generalUploadedImg;
+
+    const isSpecific = !!(
+      uploadedImages[`${pointNormId}_${point.year}`] ||
+      uploadedImages[`${unit.id}_${point.year}`]
+    );
+
+    if (!pointImg) {
+      return (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+              setTargetUploadYear(point.year);
+              handleImageUpload(e.dataTransfer.files[0]);
+            }
+          }}
+          onClick={() => handleTriggerUpload(point.year)}
+          className={`relative w-full aspect-[4/3] bg-[#0c1527] rounded-xl overflow-hidden border-2 border-dashed flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all ${
+            isDragging
+              ? 'border-[#E31C79] bg-[#E31C79]/10 scale-[1.01]'
+              : 'border-pink-500/40 hover:border-pink-400 bg-pink-950/10 hover:bg-pink-950/20'
+          }`}
+        >
+          <div className="p-3 rounded-full bg-[#E31C79]/30 text-pink-300 mb-2 shadow-lg">
+            <Upload className="w-5 h-5" />
+          </div>
+          <h4 className="text-sm font-bold text-white font-display mb-1">
+            Adjuntar Imagen Individual — Año {point.year}
+          </h4>
+          <p className="text-xs text-slate-300 max-w-[280px] mb-3">
+            Sube el plano, foto de campo u ortofoto del año {point.year} para <strong>{unit.unitName}</strong>.
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E31C79] text-white shadow-md">
+              Seleccionar Foto {point.year}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSeriesDisplayMode('raster');
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-slate-300"
+            >
+              Ver Ráster GEE
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden border border-slate-700/80 shadow-2xl flex flex-col justify-between select-none group">
+        <img
+          src={pointImg}
+          alt={`Imagen ${point.year} ${unit.unitName}`}
+          className="absolute inset-0 w-full h-full object-contain bg-slate-950 cursor-pointer"
+          onClick={() =>
+            setZoomModalImg({
+              url: pointImg,
+              title: `${unit.unitName} — Año ${point.year}`,
+              subtitle: isSpecific ? 'Imagen fotográfica / cartográfica individual del año' : 'Imagen cartográfica del lote aplicada a la serie',
+            })
+          }
+          referrerPolicy="no-referrer"
+        />
+
+        {/* Top Badges */}
+        <div className="relative z-10 flex items-center justify-between gap-2 p-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent">
+          <div className="flex items-center gap-1.5 bg-[#001871]/90 backdrop-blur-md border border-white/20 px-2.5 py-1 rounded text-white shadow-xs">
+            <span className="font-display font-extrabold text-xs text-yellow-300">
+              Año {point.year}
+            </span>
+            <span className="text-[10px] text-pink-300 font-mono flex items-center gap-1">
+              • 📷 {isSpecific ? 'Foto Individual' : 'Imagen Adjunta Lote'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() =>
+                setZoomModalImg({
+                  url: pointImg,
+                  title: `${unit.unitName} — Año ${point.year}`,
+                  subtitle: `Polígono ${unit.areaHa.toFixed(2)} Ha • NDVI Prom: ${point.meanNDVI.toFixed(2)}`,
+                })
+              }
+              className="p-1.5 rounded bg-black/60 hover:bg-black/90 text-white text-xs backdrop-blur-md transition-all border border-white/20"
+              title="Ampliar a pantalla completa"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            {isInteractive && (
+              <>
+                <button
+                  onClick={() => handleTriggerUpload(point.year)}
+                  className="px-2 py-1 rounded bg-[#E31C79]/80 hover:bg-[#E31C79] text-white text-[10px] font-bold flex items-center gap-1 backdrop-blur-md transition-all shadow-xs"
+                  title={`Adjuntar o cambiar foto individual para el año ${point.year}`}
+                >
+                  <RefreshCw className="w-3 h-3" /> {isSpecific ? 'Cambiar Foto' : '+ Foto Año ' + point.year}
+                </button>
+                <button
+                  onClick={() => handleRemoveUploadedImage(isSpecific ? point.year : undefined)}
+                  className="p-1 rounded bg-red-600/70 hover:bg-red-600 text-white text-[10px] backdrop-blur-md transition-all"
+                  title="Eliminar foto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Details Bar */}
+        <div className="relative z-10 flex items-center justify-between text-[10px] font-mono text-slate-200 p-2.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+          <div className="flex items-center gap-2">
+            <span className="text-white font-bold">{unit.unitName}</span>
+            <span className="text-cyan-300 font-mono">NDVI {point.meanNDVI.toFixed(2)}</span>
+          </div>
+          <span className="text-emerald-300 font-bold">{point.statusBadge}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Render Split Side-by-Side View (Raster NDVI vs Real Attached Photo)
+  const renderSplitView = (point: NDVISeriePoint) => {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full bg-[#0c1527] rounded-xl p-3 border border-slate-700/80 shadow-inner">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
+              <Satellite className="w-3 h-3" /> Ráster Satelital GEE (10m)
+            </span>
+            <span className="text-[9px] font-mono text-slate-400">Año {point.year}</span>
+          </div>
+          <div className="flex-1 rounded-lg overflow-hidden border border-slate-700">
+            {renderSingleMap(point, false)}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-bold text-pink-300 uppercase tracking-wider flex items-center gap-1">
+              <ImageIcon className="w-3 h-3" /> Imagen Adjunta Individual
+            </span>
+            <span className="text-[9px] font-mono text-pink-300">Año {point.year}</span>
+          </div>
+          <div className="flex-1 rounded-lg overflow-hidden border border-slate-700">
+            {renderYearUploadedView(point, false)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render Custom Uploaded Image View (Lot Level standalone)
   const renderUploadedMapView = () => {
     if (!currentUploadedImg) {
       return (
@@ -220,7 +448,7 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
               handleImageUpload(e.dataTransfer.files[0]);
             }
           }}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => handleTriggerUpload(selectedYear)}
           className={`relative w-full aspect-[4/3] bg-[#0c1527] rounded-xl overflow-hidden border-2 border-dashed flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all ${
             isDragging
               ? 'border-[#E31C79] bg-[#E31C79]/10 scale-[1.01]'
@@ -248,7 +476,14 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
         <img
           src={currentUploadedImg}
           alt={`Mapa real ${unit.unitName}`}
-          className="absolute inset-0 w-full h-full object-contain bg-slate-950"
+          className="absolute inset-0 w-full h-full object-contain bg-slate-950 cursor-pointer"
+          onClick={() =>
+            setZoomModalImg({
+              url: currentUploadedImg,
+              title: `Mapa Real del Lote: ${unit.unitName}`,
+              subtitle: `Superficie: ${unit.areaHa.toFixed(2)} Ha • ${unit.geographicalContext}`,
+            })
+          }
           referrerPolicy="no-referrer"
         />
 
@@ -265,14 +500,27 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
 
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() =>
+                setZoomModalImg({
+                  url: currentUploadedImg,
+                  title: `Mapa Real del Lote: ${unit.unitName}`,
+                  subtitle: `Superficie: ${unit.areaHa.toFixed(2)} Ha • ${unit.geographicalContext}`,
+                })
+              }
+              className="p-1.5 rounded bg-black/60 hover:bg-black/90 text-white text-xs backdrop-blur-md transition-all border border-white/20"
+              title="Ampliar"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTriggerUpload(selectedYear)}
               className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold flex items-center gap-1 backdrop-blur-md transition-all"
               title="Cambiar imagen"
             >
               <RefreshCw className="w-3 h-3" /> Reemplazar
             </button>
             <button
-              onClick={handleRemoveUploadedImage}
+              onClick={() => handleRemoveUploadedImage(undefined)}
               className="p-1 rounded bg-red-600/80 hover:bg-red-600 text-white text-[10px] backdrop-blur-md transition-all"
               title="Eliminar imagen personalizada"
             >
@@ -404,232 +652,216 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
         className="hidden"
       />
 
-      {/* Top Header Row of the Satellite Viewer with Mode Toggles */}
+      {/* Top Header Row of the Multitemporal Viewer */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider">
-              {viewMode === 'ndvi'
-                ? 'Google Earth Engine • NDVI 10m'
-                : viewMode === 'orthophoto'
-                ? 'Satélite en Vivo (Alta Resolución)'
-                : 'Imagen Adjuntada por el Usuario'}
+            <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Satellite className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Mapas Multitemporales NDVI (Serie 2017–2026)</span>
             </span>
-            <span className="text-xs font-bold text-white font-display">
+            <span className="text-sm font-bold text-white font-display">
               {unit.unitName}
             </span>
+            {currentYearImg && (
+              <span className="px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 text-[10px] font-bold flex items-center gap-1">
+                <ImageIcon className="w-3 h-3 text-pink-300" />
+                <span>{isYearSpecificPhoto ? `Foto Año ${selectedYear}` : 'Imagen Adjunta Lote'}</span>
+              </span>
+            )}
           </div>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {unit.geographicalContext} (Área: <strong className="text-white">{unit.areaHa.toFixed(2)} Ha</strong>)
+          <p className="text-[11px] text-slate-400 mt-1">
+            {unit.geographicalContext} • Superficie: <strong className="text-white">{unit.areaHa.toFixed(2)} Ha</strong> • Monitoreo Multitemporal
           </p>
         </div>
 
-        {/* View mode toggle pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Mode: Satellite Live / Google Earth */}
+        {/* Action Button: Attach / Change Image */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setViewMode('orthophoto')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              viewMode === 'orthophoto'
-                ? 'bg-[#0284c7] text-white border border-cyan-400/40 shadow-xs'
-                : 'bg-white/5 text-slate-300 hover:bg-white/10'
-            }`}
+            onClick={() => handleTriggerUpload(selectedYear)}
+            className="px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-[#E31C79] hover:bg-[#c21465] text-white shadow-md transition-all cursor-pointer"
+            title="Subir o cambiar tu imagen / ortofoto adjunta"
           >
-            <Globe2 className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Satélite en Vivo / Google Earth</span>
-          </button>
-
-          {/* Mode: Custom Uploaded Image */}
-          <button
-            onClick={() => {
-              if (!currentUploadedImg) {
-                fileInputRef.current?.click();
-              } else {
-                setViewMode('uploaded');
-              }
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              viewMode === 'uploaded'
-                ? 'bg-[#E31C79] text-white shadow-xs'
-                : currentUploadedImg
-                ? 'bg-[#E31C79]/30 text-pink-200 hover:bg-[#E31C79]/50 border border-pink-400/30'
-                : 'bg-white/5 text-slate-300 hover:bg-white/10'
-            }`}
-          >
-            <ImageIcon className="w-3.5 h-3.5 text-pink-300" />
-            <span>{currentUploadedImg ? 'Mi Imagen Adjunta' : '+ Adjuntar Mi Foto'}</span>
+            <Upload className="w-3.5 h-3.5" />
+            <span>{currentYearImg ? 'Cambiar Mi Imagen Adjunta' : '+ Adjuntar Mi Imagen'}</span>
           </button>
         </div>
       </div>
 
-      {/* Main Display Area */}
-      {viewMode === 'orthophoto' ? (
-        /* Orthophoto Mode */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-7">
-            {renderOrthophotoMap()}
-          </div>
-          <div className="lg:col-span-5 flex flex-col justify-between gap-4 h-full">
-            <div className="bg-[#120b29] rounded-xl p-4 border border-white/10 flex flex-col gap-3 shadow-md">
-              <span className="text-[10px] uppercase font-mono text-cyan-300 font-bold">Ficha Cartográfica del Lote</span>
-              <h4 className="text-base font-bold text-white font-display">
-                {unit.unitName}
-              </h4>
-              <div className="space-y-2 text-xs text-slate-300">
-                <div className="flex justify-between py-1 border-b border-white/10">
-                  <span className="text-slate-400">Superficie Total:</span>
-                  <strong className="text-white font-mono">{unit.areaHa.toFixed(2)} Hectáreas</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/10">
-                  <span className="text-slate-400">Ubicación / Cuenca:</span>
-                  <strong className="text-slate-200">{unit.geographicalContext}</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/10">
-                  <span className="text-slate-400">Régimen Legal:</span>
-                  <strong className="text-cyan-300">Expediente LAM5475 • Res. 445</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/10">
-                  <span className="text-slate-400">Estado Ante ANLA:</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                    {unit.series[unit.series.length - 1].statusBadge}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-[#001871]/70 to-[#120b29] rounded-xl p-4 border border-blue-400/20 text-xs flex flex-col gap-2 shadow-md">
-              <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                <Sparkles className="w-4 h-4 text-yellow-300" />
-                <span>Dictamen Técnico para ANLA / Junta:</span>
-              </div>
-              <p className="text-slate-200 leading-relaxed">
-                {unit.regulatoryRecommendation}
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : viewMode === 'uploaded' ? (
-        /* Uploaded Image Mode */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-7">
-            {renderUploadedMapView()}
-          </div>
-          <div className="lg:col-span-5 flex flex-col justify-between gap-4 h-full">
-            <div className="bg-[#120b29] rounded-xl p-4 border border-white/10 flex flex-col gap-3 shadow-md">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-mono text-pink-400 font-bold">Imagen Personalizada</span>
-                <span className="px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold">
-                  Adjuntada por Usuario
-                </span>
-              </div>
-              <h4 className="text-base font-bold text-white font-display">
-                Mapa Real del Lote: {unit.unitName}
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Esta imagen representa el levantamiento aerofotogramétrico o cartográfico oficial del polígono de <strong>{unit.areaHa.toFixed(2)} Ha</strong>. Se almacena localmente en la presentación para tus sesiones y reportes.
-              </p>
-              <div className="flex items-center gap-2 pt-2 border-t border-white/10">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E31C79] hover:bg-[#c21465] text-white flex items-center gap-1.5 shadow-md"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Subir Nueva Versión</span>
-                </button>
-                <button
-                  onClick={handleRemoveUploadedImage}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 hover:bg-red-500/20 hover:text-red-300 text-slate-300 flex items-center gap-1.5 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Eliminar</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-[#001871]/70 to-[#120b29] rounded-xl p-4 border border-blue-400/20 text-xs flex flex-col gap-2 shadow-md">
-              <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                <FileCheck className="w-4 h-4 text-emerald-400" />
-                <span>Sustento para la Autoridad:</span>
-              </div>
-              <p className="text-slate-200 leading-relaxed">
-                {unit.regulatoryRecommendation}
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : showAllYearsGrid ? (
-        /* Matrix Grid View of all evaluated years */
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {unit.series.map((point) => (
-            <div
-              key={point.year}
-              onClick={() => onSelectYear(point.year)}
-              className={`cursor-pointer rounded-xl transition-all ${
-                point.year === selectedYear ? 'ring-2 ring-[#E31C79] scale-[1.02]' : 'hover:opacity-95'
-              }`}
-            >
-              {renderSingleMap(point, false)}
-              <div className="mt-2 px-1 text-center">
-                <div className="text-xs font-bold text-white flex items-center justify-center gap-1">
-                  Año {point.year}
-                </div>
-                <div className="text-[10px] text-slate-400 truncate">
-                  {point.label}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        /* Focused Single Year View with Interactive Controls & Breakdown */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* Multitemporal Interactive Map & Diagnostics View */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           
           {/* Left Column: Interactive Satellite Map (7 cols) */}
           <div className="lg:col-span-7 flex flex-col gap-3">
-            {renderSingleMap(currentPoint, true)}
-
-            {/* Hover Tooltip inspection badge */}
-            <div className="min-h-[30px] bg-slate-900/60 rounded-lg px-3 py-1.5 border border-white/5 flex items-center justify-between text-xs">
-              {hoveredCell ? (
-                <div className="flex items-center gap-3 w-full justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-xs" style={{ backgroundColor: hoveredCell.ndvi < 0.25 ? '#DC2626' : hoveredCell.ndvi < 0.45 ? '#EAB308' : hoveredCell.ndvi < 0.65 ? '#84CC16' : '#15803D' }} />
-                    <span className="font-medium text-white">{hoveredCell.stratum}</span>
-                  </div>
-                  <span className="font-mono text-cyan-300 font-bold">
-                    Píxel [x:{hoveredCell.x}, y:{hoveredCell.y}] = NDVI {hoveredCell.ndvi}
+            
+            {/* Sub-selector: Attached Image vs Ráster NDVI vs Split */}
+            <div className="flex items-center justify-between gap-2 p-1.5 bg-[#120b29] rounded-xl border border-white/10 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setSeriesDisplayMode('uploaded')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    seriesDisplayMode === 'uploaded'
+                      ? 'bg-gradient-to-r from-[#E31C79] to-[#be185d] text-white shadow-md font-extrabold ring-2 ring-pink-400/40'
+                      : currentYearImg
+                      ? 'bg-pink-950/40 text-pink-300 hover:text-white border border-pink-500/30'
+                      : 'bg-white/5 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-pink-300" />
+                  <span>
+                    📸 Mi Imagen Adjunta
+                    {isYearSpecificPhoto ? ` (${currentPoint.year})` : currentYearImg ? ' (Lote)' : ''}
                   </span>
-                </div>
-              ) : (
-                <span className="text-[11px] text-slate-400 italic flex items-center gap-1.5">
-                  <Info className="w-3 h-3 text-cyan-400" />
-                  Pasa el cursor sobre cualquier píxel de 10x10m para consultar el valor exacto de NDVI y estrato.
-                </span>
-              )}
+                </button>
+
+                <button
+                  onClick={() => setSeriesDisplayMode('raster')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    seriesDisplayMode === 'raster'
+                      ? 'bg-[#001871] text-cyan-300 border border-cyan-400/40 shadow-xs ring-2 ring-blue-500/30 font-bold'
+                      : 'bg-white/5 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Satellite className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>🛰️ Ráster NDVI 10m GEE</span>
+                </button>
+
+                {currentYearImg && (
+                  <button
+                    onClick={() => setSeriesDisplayMode('split')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      seriesDisplayMode === 'split'
+                        ? 'bg-purple-600 text-white shadow-xs ring-2 ring-purple-400/40 font-bold'
+                        : 'bg-white/5 text-slate-400 hover:text-white'
+                    }`}
+                    title="Comparar ráster NDVI con imagen adjunta"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-purple-300" />
+                    <span>Comparar Lado a Lado</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => handleTriggerUpload(currentPoint.year)}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[#E31C79]/20 hover:bg-[#E31C79] text-pink-200 hover:text-white flex items-center gap-1 border border-pink-500/30 transition-all cursor-pointer"
+                title={`Adjuntar o actualizar foto individual para el año ${currentPoint.year}`}
+              >
+                <Upload className="w-3 h-3 text-pink-300" />
+                <span>+ Foto {currentPoint.year}</span>
+              </button>
             </div>
 
-            {/* Timeline Year Selector Chips */}
-            <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-[#120b29] rounded-xl border border-white/10">
-              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider px-2">
-                Año Evaluado:
-              </span>
+            {/* Map or Uploaded Image or Split Render */}
+            {seriesDisplayMode === 'raster' ? (
+              renderSingleMap(currentPoint, true)
+            ) : seriesDisplayMode === 'uploaded' ? (
+              renderYearUploadedView(currentPoint, true)
+            ) : (
+              renderSplitView(currentPoint)
+            )}
+
+            {/* Hover Tooltip or Photo Legend */}
+            {seriesDisplayMode === 'raster' ? (
+              <div className="min-h-[30px] bg-slate-900/60 rounded-lg px-3 py-1.5 border border-white/5 flex items-center justify-between text-xs">
+                {hoveredCell ? (
+                  <div className="flex items-center gap-3 w-full justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-xs" style={{ backgroundColor: hoveredCell.ndvi < 0.25 ? '#DC2626' : hoveredCell.ndvi < 0.45 ? '#EAB308' : hoveredCell.ndvi < 0.65 ? '#84CC16' : '#15803D' }} />
+                      <span className="font-medium text-white">{hoveredCell.stratum}</span>
+                    </div>
+                    <span className="font-mono text-cyan-300 font-bold">
+                      Píxel [x:{hoveredCell.x}, y:{hoveredCell.y}] = NDVI {hoveredCell.ndvi}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic flex items-center gap-1.5">
+                    <Info className="w-3 h-3 text-cyan-400" />
+                    Pasa el cursor sobre cualquier píxel de 10x10m para consultar el valor exacto de NDVI y estrato.
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="min-h-[30px] bg-slate-900/60 rounded-lg px-3 py-1.5 border border-white/5 flex items-center justify-between text-xs">
+                <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                  <ImageIcon className="w-3 h-3 text-pink-400" />
+                  {isYearSpecificPhoto
+                    ? `Mostrando imagen individual específica del año ${currentPoint.year} para ${unit.unitName}.`
+                    : currentYearImg
+                    ? `Mostrando imagen adjunta del lote ${unit.unitName} (puedes subir una foto específica para ${currentPoint.year} con el botón "+ Foto ${currentPoint.year}").`
+                    : `Sin foto adjunta aún para este año.`}
+                </span>
+                {currentYearImg && (
+                  <button
+                    onClick={() =>
+                      setZoomModalImg({
+                        url: currentYearImg,
+                        title: `${unit.unitName} — Año ${currentPoint.year}`,
+                      })
+                    }
+                    className="text-[10px] text-cyan-300 hover:underline flex items-center gap-1"
+                  >
+                    <Maximize2 className="w-3 h-3" /> Pantalla Completa
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Timeline Year Selector Chips with Multitemporal Navigation */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-[#120b29] rounded-xl border border-white/10">
+              <div className="flex items-center gap-1.5 px-1">
+                <Satellite className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                  Año Evaluado:
+                </span>
+              </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {unit.series.map((point) => {
                   const isSelected = point.year === selectedYear;
+                  const pointNormId = normalizeLotId(unit.id);
+                  const hasSpecific = !!(uploadedImages[`${pointNormId}_${point.year}`] || uploadedImages[`${unit.id}_${point.year}`]);
                   return (
                     <button
                       key={point.year}
                       onClick={() => onSelectYear(point.year)}
-                      className={`px-3 py-1 rounded-lg text-xs font-display font-bold transition-all ${
+                      className={`px-3 py-1 rounded-lg text-xs font-display font-bold transition-all flex items-center gap-1.5 ${
                         isSelected
                           ? 'bg-[#E31C79] text-white shadow-md scale-105 ring-2 ring-white/30'
                           : 'bg-white/10 text-slate-300 hover:bg-white/20'
                       }`}
                     >
-                      {point.year}
+                      <span>{point.year}</span>
+                      {hasSpecific ? (
+                        <span title="Foto específica de este año" className="text-[10px]">📸</span>
+                      ) : currentUploadedImg ? (
+                        <span title="Imagen adjunta disponible" className="text-[8px] opacity-70">📷</span>
+                      ) : null}
+                      <span className={`text-[9px] font-mono px-1 py-0.2 rounded ${
+                        isSelected ? 'bg-black/40 text-yellow-300' : 'bg-black/30 text-slate-400'
+                      }`}>
+                        NDVI {point.meanNDVI.toFixed(2)}
+                      </span>
                     </button>
                   );
                 })}
+
+                {/* Dedicated Toggle Button for Attached Image in the Series */}
+                <button
+                  onClick={() => {
+                    setSeriesDisplayMode(seriesDisplayMode === 'uploaded' ? 'raster' : 'uploaded');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    seriesDisplayMode === 'uploaded'
+                      ? 'bg-pink-600 text-white ring-2 ring-pink-400/50 shadow-md font-extrabold'
+                      : currentYearImg
+                      ? 'bg-pink-900/30 text-pink-300 border border-pink-500/30 hover:bg-pink-900/50'
+                      : 'bg-white/10 text-slate-300 hover:bg-white/20'
+                  }`}
+                  title="Ver o alternar imagen adjunta en la serie"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-pink-300" />
+                  <span>{seriesDisplayMode === 'uploaded' ? '✓ Viendo Imagen' : 'Ver Imagen Adjunta'}</span>
+                </button>
               </div>
             </div>
 
@@ -763,7 +995,6 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
           </div>
 
         </div>
-      )}
 
       {/* Global NDVI Strata Reference Bar */}
       <div className="mt-2 pt-3 border-t border-white/10">
@@ -795,6 +1026,45 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Lightbox Modal for Fullscreen Attached Image Inspection */}
+      {zoomModalImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setZoomModalImg(null)}
+        >
+          <div
+            className="relative max-w-5xl w-full bg-[#120b29] rounded-2xl border border-white/20 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3.5 border-b border-white/10 bg-[#0c1527]">
+              <div>
+                <h3 className="text-sm font-bold text-white font-display flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-pink-400" />
+                  {zoomModalImg.title}
+                </h3>
+                {zoomModalImg.subtitle && (
+                  <p className="text-xs text-slate-400 mt-0.5">{zoomModalImg.subtitle}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setZoomModalImg(null)}
+                className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all text-xs font-bold"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <div className="flex-1 p-2 bg-black flex items-center justify-center overflow-auto max-h-[78vh]">
+              <img
+                src={zoomModalImg.url}
+                alt={zoomModalImg.title}
+                className="max-w-full max-h-[75vh] object-contain rounded"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
