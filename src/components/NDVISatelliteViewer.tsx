@@ -47,8 +47,8 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
   const [viewMode, setViewMode] = useState<'ndvi' | 'orthophoto' | 'uploaded'>('ndvi');
 
   // Display mode inside the multitemporal series: 'raster' | 'uploaded' | 'split'
-  // Defaults to 'uploaded' so the user's attached image is immediately visible in multitemporal maps!
-  const [seriesDisplayMode, setSeriesDisplayMode] = useState<'raster' | 'uploaded' | 'split'>('uploaded');
+  // Starts on 'raster' (multitemporal GEE map) when no image is uploaded, or auto-switches to 'uploaded' when an image exists
+  const [seriesDisplayMode, setSeriesDisplayMode] = useState<'raster' | 'uploaded' | 'split'>('raster');
 
   // Target year for photo upload (undefined = lot general image)
   const [targetUploadYear, setTargetUploadYear] = useState<number | undefined>(selectedYear);
@@ -99,10 +99,13 @@ export const NDVISatelliteViewer: React.FC<NDVISatelliteViewerProps> = ({
 
   const currentUploadedImg = currentYearImg;
 
-  // Whenever unit or selectedYear changes, if an attached image exists, show the uploaded image by default in multitemporal maps
+  // Whenever unit or selectedYear changes: if an attached image exists, show it directly!
+  // If no image exists for this lot/year, default cleanly to the NDVI 10m raster map so it never looks blank
   useEffect(() => {
     if (currentYearImg) {
       setSeriesDisplayMode('uploaded');
+    } else {
+      setSeriesDisplayMode('raster');
     }
   }, [unit.id, selectedYear, !!currentYearImg]);
 
